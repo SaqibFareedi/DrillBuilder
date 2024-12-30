@@ -4,6 +4,7 @@
 //
 //  Created by Saqib Fareedi on 12/12/24.
 import SwiftUI
+import SwiftUI
 
 struct DotsListView: View {
     @Binding var targets: [Target]
@@ -15,60 +16,112 @@ struct DotsListView: View {
     @State private var showingSavedDrillsPopup = false
     @State private var offset: CGFloat = 0 // Track horizontal swipe offset
 
+    // Batch management
+    @State private var batches: [Batch] = [] // List of batches
+    @State private var newBatchName: String = "" // Input for batch name
+    @State private var selectedTargets: [Target] = [] // Targets selected for a batch
+    @State private var showingBatchPopup = false // Toggle for batch creation popup
+
+    // Pattern management
+    @State private var patterns: [Pattern] = [] // List of patterns
+    @State private var newPatternName: String = "" // Input for pattern name
+    @State private var selectedSequence: [Target] = [] // Targets selected for the pattern
+    @State private var repeatCount: Int = 1 // Repeat count for patterns
+    @State private var showingPatternPopup = false // Toggle for pattern creation popup
+
     var body: some View {
         ZStack(alignment: .leading) {
-            // Conditional Background Overlay
-            if showingDrillList && offset == 0 {
-                Color.black.opacity(0.5)
-                    .edgesIgnoringSafeArea(.all)
-                    .onTapGesture {
-                        withAnimation {
-                            hideView()
-                        }
-                    }
-            }
-
-            // Main content
             VStack(alignment: .leading) {
                 Text("List of Dots")
                     .font(.headline)
                     .padding(.bottom, 5)
 
+                // Display batches, patterns, and ungrouped targets
                 List {
-                    ForEach($targets) { $target in
-                        HStack {
-                            TextField("Dot Name", text: $target.name)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .frame(maxWidth: 100)
+                    ForEach(batches) { batch in
+                        Section(header: Text("Batch: \(batch.name)")) {
+                            ForEach(batch.targets) { target in
+                                HStack {
+                                    Text(target.name)
+                                        .font(.subheadline)
 
-                            Spacer()
+                                    Spacer()
 
-                            ColorPicker("", selection: Binding(
-                                get: { $target.configuration.color.wrappedValue.color },
-                                set: { newColor in
-                                    $target.configuration.color.wrappedValue = ColorData(color: newColor)
+                                    Text("Position: (\(Int(target.point.x)), \(Int(target.point.y)))")
+                                        .foregroundColor(.gray)
                                 }
-                            ))
-                            .labelsHidden()
-
-                            Spacer()
-
-                            Text("Position: (\(Int($target.point.x.wrappedValue)), \(Int($target.point.y.wrappedValue)))")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
+                            }
                         }
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                if let index = targets.firstIndex(where: { $0.id == $target.id.wrappedValue }) {
-                                    targets.remove(at: index)
+                    }
+                    .onDelete(perform: deleteBatch)
+
+                    ForEach(patterns) { pattern in
+                        Section(header: Text("Pattern: \(pattern.name)")) {
+                            ForEach(pattern.sequence) { target in
+                                HStack {
+                                    Text(target.name)
+                                        .font(.subheadline)
+
+                                    Spacer()
+
+                                    Text("Position: (\(Int(target.point.x)), \(Int(target.point.y)))")
+                                        .foregroundColor(.gray)
                                 }
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+                            }
+                            Text("Repeat Count: \(pattern.repeatCount)")
+                                .font(.footnote)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .onDelete(perform: deletePattern)
+
+                    Section(header: Text("Ungrouped Targets")) {
+                        ForEach(targets.filter { target in
+                            !batches.contains { $0.targets.contains(where: { $0.id == target.id }) }
+                                && !patterns.contains { $0.sequence.contains(where: { $0.id == target.id }) }
+                        }) { target in
+                            HStack {
+                                Text(target.name)
+                                    .font(.subheadline)
+
+                                Spacer()
+
+                                Text("Position: (\(Int(target.point.x)), \(Int(target.point.y)))")
+                                    .foregroundColor(.gray)
                             }
                         }
                     }
                 }
 
+                // Batch creation button
+                Button(action: {
+                    showingBatchPopup = true
+                }) {
+                    Text("Create Batch")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.orange)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .padding(.top, 10)
+
+                // Pattern creation button
+                Button(action: {
+                    showingPatternPopup = true
+                }) {
+                    Text("Create Pattern")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.purple)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .padding(.top, 10)
+
+                // Save Drill button
                 Button(action: {
                     showingSavePopup = true
                 }) {
@@ -82,6 +135,7 @@ struct DotsListView: View {
                 }
                 .padding(.top, 10)
 
+                // View Saved Drills button
                 Button(action: {
                     showingSavedDrillsPopup = true
                 }) {
@@ -96,35 +150,23 @@ struct DotsListView: View {
                 .padding(.top, 10)
             }
             .padding()
-            .background(Color.white)
-            .cornerRadius(15)
-            .shadow(radius: 10)
-            .offset(x: offset) // Apply swipe offset
-            .gesture(
-                DragGesture()
-                    .onChanged { gesture in
-                        // Update offset for both left and right swipes
-                        offset = min(max(gesture.translation.width, 0), UIScreen.main.bounds.width)
-                    }
-                    .onEnded { gesture in
-                        if gesture.translation.width > 100 {
-                            // Swipe right to hide
-                            withAnimation {
-                                hideView()
-                            }
-                        } else if gesture.translation.width < -100 {
-                            // Swipe left to show
-                            withAnimation {
-                                showView()
-                            }
-                        } else {
-                            // Reset to current state
-                            withAnimation {
-                                offset = showingDrillList ? 0 : UIScreen.main.bounds.width
-                            }
-                        }
-                    }
-            )
+            .sheet(isPresented: $showingBatchPopup) {
+                BatchPopupView(
+                    targets: $targets,
+                    batches: $batches,
+                    selectedTargets: $selectedTargets,
+                    newBatchName: $newBatchName
+                )
+            }
+            .sheet(isPresented: $showingPatternPopup) {
+                PatternPopupView(
+                    targets: $targets,
+                    patterns: $patterns,
+                    selectedSequence: $selectedSequence,
+                    newPatternName: $newPatternName,
+                    repeatCount: $repeatCount
+                )
+            }
             .sheet(isPresented: $showingSavePopup) {
                 SaveDrillPopup(targets: targets, zones: zones, isPresented: $showingSavePopup)
                     .environmentObject(drillStore)
@@ -136,27 +178,14 @@ struct DotsListView: View {
                 )
             }
         }
-        .gesture(
-            DragGesture()
-                .onChanged { gesture in
-                    // Detect swipe left outside to bring the view back
-                    if !showingDrillList && gesture.translation.width < -100 {
-                        withAnimation {
-                            showView()
-                        }
-                    }
-                }
-        )
     }
 
-    private func hideView() {
-        offset = UIScreen.main.bounds.width // Move off-screen to the right
-        showingDrillList = false // Update binding to hide the view
+    private func deleteBatch(at offsets: IndexSet) {
+        batches.remove(atOffsets: offsets)
     }
 
-    private func showView() {
-        offset = 0 // Bring back to original position
-        showingDrillList = true // Update binding to show the view
+    private func deletePattern(at offsets: IndexSet) {
+        patterns.remove(atOffsets: offsets)
     }
 
     private func loadDrill(_ drill: Drill) {
@@ -164,4 +193,4 @@ struct DotsListView: View {
         zones = drill.zones
         showingSavedDrillsPopup = false // Dismiss popup after loading
     }
-} 
+}

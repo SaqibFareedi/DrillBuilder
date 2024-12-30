@@ -9,9 +9,10 @@ import SwiftUI
 
 import SwiftUI
 
-struct Batch: Identifiable {
-    let id = UUID() // Unique identifier
-    var label: String // Name of the batch
-    var targets: [Target] // Targets included in the batch
-    var repeatCount: Int // Number of times to repeat this batch
+import SwiftUI
+
+struct Batch: Identifiable, Codable {
+    let id: UUID = UUID()
+    var name: String
+    var targets: [Target]
 }
